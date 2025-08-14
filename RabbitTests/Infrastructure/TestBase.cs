@@ -92,6 +92,8 @@ public abstract class TestBase : IDisposable
                 await SafeDeleteExchange("test-exchange");
                 await SafeDeleteExchange("test-fanout-exchange");
                 await SafeDeleteExchange("test-durable-fanout-exchange");
+                await SafeDeleteExchange("test-direct-exchange");
+                await SafeDeleteExchange("test-topic-exchange");
             }
         }
         catch (Exception ex)
