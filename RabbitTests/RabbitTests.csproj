@@ -26,6 +26,7 @@
 
   <ItemGroup>
     <Folder Include="UseCase1_WorkQueue\" />
+    <Folder Include="UseCase2_PublishSubscribe\" />
   </ItemGroup>
 
 </Project>

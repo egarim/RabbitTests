@@ -74,6 +74,8 @@ public abstract class TestBase : IDisposable
                 
                 // Delete test exchanges (if they exist)
                 await SafeDeleteExchange("test-exchange");
+                await SafeDeleteExchange("test-fanout-exchange");
+                await SafeDeleteExchange("test-durable-fanout-exchange");
             }
         }
         catch (Exception ex)
