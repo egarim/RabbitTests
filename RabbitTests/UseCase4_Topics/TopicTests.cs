@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using RabbitTests.Infrastructure;
+using NUnit.Framework;
 
 namespace RabbitTests.UseCase4_Topics;
 

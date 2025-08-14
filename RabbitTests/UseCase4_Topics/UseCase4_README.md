@@ -12,7 +12,7 @@ This implementation demonstrates the **Topic-Based Routing** messaging pattern u
 - Exchange durability and message persistence
 
 ### 2. Wildcard Pattern Matching
-- **Single-word wildcard (**)**: Matches exactly one word in routing key
+- **Single-word wildcard (*)**: Matches exactly one word in routing key
 - **Multi-word wildcard (#)**: Matches zero or more words in routing key
 - **Complex patterns**: Combining wildcards with exact words
 - **Pattern precedence**: Handling overlapping routing patterns
@@ -34,10 +34,10 @@ This implementation demonstrates the **Topic-Based Routing** messaging pattern u
 ```
 RabbitTests/
 ??? UseCase4_Topics/
-?   ??? TopicPublisher.cs       # Publishes messages with hierarchical routing keys
-?   ??? TopicSubscriber.cs      # Subscribes using wildcard patterns
-?   ??? TopicTests.cs          # Comprehensive test suite
-?   ??? UseCase4_README.md     # This documentation
+    ??? TopicPublisher.cs       # Publishes messages with hierarchical routing keys
+    ??? TopicSubscriber.cs      # Subscribes using wildcard patterns
+    ??? TopicTests.cs          # Comprehensive test suite
+    ??? UseCase4_README.md     # This documentation
 ??? Infrastructure/
     ??? TestBase.cs            # Base test class with setup/teardown
     ??? RabbitMQConnection.cs  # Connection management utilities
@@ -87,69 +87,63 @@ graph TB
 
 ## Message Flow Patterns
 
-### Wildcard Pattern Matching
+### Topic-Based Routing with Wildcards
 ```mermaid
 sequenceDiagram
-    participant P as Publisher
+    participant P as TopicPublisher
     participant E as Topic Exchange
     participant S1 as Subscriber (logs.*)
     participant S2 as Subscriber (*.error.*)
     participant S3 as Subscriber (logs.#)
     
     P->>E: Publish "logs.info.web"
-    E->>S1: Match "logs.*" ?
-    E->>S3: Match "logs.#" ?
-    
     P->>E: Publish "logs.error.database"
-    E->>S1: Match "logs.*" ?
-    E->>S2: Match "*.error.*" ?
-    E->>S3: Match "logs.#" ?
-    
     P->>E: Publish "system.error.auth"
-    E->>S2: Match "*.error.*" ?
     
-    P->>E: Publish "logs.warning.web.frontend"
-    E->>S3: Match "logs.#" ?
+    E->>S1: Route "logs.info.web" (matches logs.*)
+    E->>S1: Route "logs.error.database" (matches logs.*)
+    
+    E->>S2: Route "logs.error.database" (matches *.error.*)
+    E->>S2: Route "system.error.auth" (matches *.error.*)
+    
+    E->>S3: Route "logs.info.web" (matches logs.#)
+    E->>S3: Route "logs.error.database" (matches logs.#)
 ```
 
 ### Hierarchical Event Routing
 ```mermaid
 sequenceDiagram
-    participant P as Publisher
+    participant P as TopicPublisher
     participant E as Topic Exchange
     participant U as User Service Subscriber
     participant O as Order Service Subscriber
     participant A as All Services Subscriber
-    participant L as Audit Log Subscriber
+    participant AU as Audit Subscriber
     
     P->>E: Publish "user.service.registration"
-    E->>U: Match "user.service.*" ?
-    E->>A: Match "*.service.*" ?
-    E->>L: Match "#" ?
-    
     P->>E: Publish "order.service.payment"
-    E->>O: Match "order.service.*" ?
-    E->>A: Match "*.service.*" ?
-    E->>L: Match "#" ?
+    P->>E: Publish "notification.service.email"
     
-    P->>E: Publish "inventory.alert.lowstock"
-    E->>L: Match "#" ?
+    E->>U: Route to User Service (user.service.*)
+    E->>O: Route to Order Service (order.service.*)
+    
+    E->>A: Route to All Services (*.service.*)
+    E->>A: Route to All Services (*.service.*)
+    E->>A: Route to All Services (*.service.*)
+    
+    E->>AU: Route to Audit (#)
+    E->>AU: Route to Audit (#)
+    E->>AU: Route to Audit (#)
 ```
 
 ### Dynamic Pattern Management
 ```mermaid
 graph LR
-    subgraph "Runtime Pattern Changes"
-        A[Initial Patterns:<br/>logs.info.*] --> B[Add Pattern:<br/>logs.error.*]
-        B --> C[Remove Pattern:<br/>logs.info.*]
-        C --> D[Add Pattern:<br/>logs.#]
-        D --> E[Final Patterns:<br/>logs.error.*, logs.#]
-    end
-    
-    subgraph "Message Flow"
-        M1[logs.info.web] --> |Phase 1| R1[? Received]
-        M2[logs.error.web] --> |Phase 2| R2[? Received]
-        M3[logs.warning.db] --> |Phase 3| R3[? Received]
+    subgraph "Pattern Evolution"
+        A[Initial Pattern: logs.info.*] --> B[Add Pattern: logs.error.*]
+        B --> C[Remove Pattern: logs.info.*]
+        C --> D[Add Pattern: logs.#]
+        D --> E[Final: logs.error.* + logs.#]
     end
 ```
 
@@ -174,7 +168,7 @@ classDiagram
         -string _exchangeName
         +InitializeAsync(bool durable)
         +PublishMessageAsync(string routingKey, string message, bool persistent)
-        +PublishEventMessageAsync(EventMessage, bool persistent)
+        +PublishEventMessageAsync(EventMessage event, bool persistent)
         +PublishTestLogMessagesAsync(int messagesPerPattern, bool persistent)
         +PublishTestMicroserviceEventsAsync(int messagesPerService, bool persistent)
         +PublishComplexPatternMessagesAsync(int messagesPerPattern, bool persistent)
@@ -186,15 +180,13 @@ classDiagram
         -ILogger _logger
         -string _exchangeName
         -string _subscriberId
-        -ConcurrentQueue<string> _receivedMessages
-        -ConcurrentDictionary<string, List<string>> _messagesByPattern
         +InitializeAsync(string[] bindingPatterns, bool useNamedQueue, bool exclusive, bool durable)
         +StartConsumingAsync(bool autoAck)
         +ConsumeMessagesAsync(int expectedCount, bool autoAck, TimeSpan timeout)
         +ConsumeEventMessagesAsync(int expectedCount, bool autoAck, TimeSpan timeout)
         +AddBindingPatternsAsync(string[] newPatterns)
         +RemoveBindingPatternsAsync(string[] patternsToRemove)
-        +GetMessagesByPattern()
+        +GetReceivedMessages()
         +GetEventsByPattern()
         +GetStats()
         +Dispose()
@@ -208,7 +200,7 @@ classDiagram
         +string EventType
         +string Message
         +DateTime Timestamp
-        +Dictionary<string, object> Data
+        +Dictionary Data
         +GetRoutingKey()
         +GetDisplayName()
     }
@@ -217,9 +209,9 @@ classDiagram
         +string SubscriberId
         +int MessagesReceived
         +DateTime StartTime
-        +DateTime? LastMessageTime
+        +DateTime LastMessageTime
         +string[] BoundPatterns
-        +string? QueueName
+        +string QueueName
     }
     
     class TopicTests {
@@ -237,11 +229,9 @@ classDiagram
     TestBase ..> MessageHelpers : uses
     TopicTests ..> TopicPublisher : creates
     TopicTests ..> TopicSubscriber : creates
-    TopicPublisher ..> MessageHelpers : uses
-    TopicPublisher ..> EventMessage : creates
-    TopicSubscriber ..> MessageHelpers : uses
-    TopicSubscriber ..> EventMessage : consumes
-    TopicSubscriber ..> TopicSubscriberStats : provides
+    TopicPublisher ..> EventMessage : uses
+    TopicSubscriber ..> EventMessage : uses
+    TopicSubscriber ..> TopicSubscriberStats : uses
 ```
 
 ## Core Classes
@@ -251,26 +241,27 @@ Responsible for publishing messages with hierarchical routing keys to topic exch
 
 **Key Features:**
 - Initialize topic exchanges with different durability settings
-- Publish messages with hierarchical routing keys
-- Support for persistent messages and event objects
-- Specialized methods for different message types (logs, events, complex patterns)
-- Built-in test data generation for various scenarios
+- Publish messages with custom routing keys
+- Support for structured EventMessage objects
+- Complex pattern message publishing for testing
+- Persistent message support
 
 **Example Usage:**
 ```csharp
 var publisher = new TopicPublisher(channel, logger, "my-topic-exchange");
 await publisher.InitializeAsync(durable: false);
 
-// Publish hierarchical log message
-await publisher.PublishMessageAsync("logs.error.database", "Database connection failed", persistent: false);
+// Publish with simple routing key
+await publisher.PublishMessageAsync("logs.error.database", "Database connection failed", false);
 
-// Publish structured event message
-var eventMessage = new EventMessage 
+// Publish structured event
+var eventMessage = new EventMessage
 {
-    System = "user", 
+    System = "user",
     Level = "service", 
-    Component = "registration",
-    EventType = "UserRegistered"
+    Component = "authentication",
+    EventType = "LoginFailed",
+    Message = "Invalid credentials provided"
 };
 await publisher.PublishEventMessageAsync(eventMessage, persistent: true);
 ```
@@ -279,155 +270,133 @@ await publisher.PublishEventMessageAsync(eventMessage, persistent: true);
 Consumes messages from topic exchanges using wildcard pattern matching.
 
 **Key Features:**
-- Subscribe using wildcard patterns (* and # wildcards)
-- Dynamic pattern management (add/remove patterns at runtime)
-- Pattern-specific message collection and statistics
-- Event-driven and polling consumption models
-- Comprehensive pattern matching logic
-- Performance monitoring and statistics
+- Configurable wildcard pattern bindings (* and # wildcards)
+- Multiple pattern support per subscriber
+- Dynamic pattern management (add/remove at runtime)
+- Event-driven message processing
+- Pattern-specific message tracking and statistics
 
 **Example Usage:**
 ```csharp
-var subscriber = new TopicSubscriber(channel, logger, "my-topic-exchange", "log-subscriber");
+var subscriber = new TopicSubscriber(channel, logger, "my-topic-exchange", "error-handler");
 
-// Initialize with wildcard patterns
-await subscriber.InitializeAsync(new[] { "logs.error.*", "*.warning.*", "system.#" });
+// Initialize with multiple patterns
+await subscriber.InitializeAsync(new[] { "*.error.*", "logs.warning.#" });
 
-// Start consuming asynchronously
-await subscriber.StartConsumingAsync(autoAck: false);
+// Consume specific number of messages
+var messages = await subscriber.ConsumeMessagesAsync(10, autoAck: false);
 
-// Or consume specific number of messages
-var messages = await subscriber.ConsumeMessagesAsync(10, autoAck: true, TimeSpan.FromSeconds(30));
+// Add new patterns dynamically
+await subscriber.AddBindingPatternsAsync(new[] { "system.critical.*" });
 
-// Dynamic pattern management
-await subscriber.AddBindingPatternsAsync(new[] { "alerts.#" });
-await subscriber.RemoveBindingPatternsAsync(new[] { "logs.error.*" });
+// Get statistics
+var stats = subscriber.GetStats();
+var messagesByPattern = subscriber.GetMessagesByPattern();
 ```
+
+### EventMessage
+Represents structured events with hierarchical routing support.
+
+**Key Features:**
+- System.Level.Component hierarchy
+- Automatic routing key generation
+- Metadata support with custom data
+- Timestamp tracking
+- Event type classification
 
 ## Test Scenarios
 
-### 1. WildcardRouting_SingleAndMultiWordWildcards
+### 1. WildcardRouting_SingleAndMultiWordWildcards_Should_MatchCorrectPatterns
 - **Purpose**: Verify wildcard pattern matching (* and #)
-- **Test**: Multiple subscribers with different wildcard patterns
-- **Validation**: Messages routed correctly based on pattern matching
+- **Test**: Publish log messages, verify pattern-based routing
+- **Validation**: Correct messages reach appropriate subscribers
 
-### 2. HierarchicalRouting_SystemLevelComponent
-- **Purpose**: Test hierarchical routing with system.level.component structure
-- **Test**: Microservice events with hierarchical routing keys
-- **Validation**: Events delivered to appropriate service handlers
+### 2. HierarchicalRouting_SystemLevelComponent_Should_RouteByHierarchy
+- **Purpose**: Demonstrate microservice event routing
+- **Test**: Route events by system.level.component hierarchy
+- **Validation**: Events reach correct service handlers
 
-### 3. ComplexPatterns_MultipleOverlappingRules
-- **Purpose**: Handle complex, overlapping routing patterns
-- **Test**: Multiple subscribers with overlapping patterns
-- **Validation**: Correct message delivery with pattern precedence
+### 3. ComplexPatterns_MultipleOverlappingRules_Should_HandleComplexRouting
+- **Purpose**: Test complex overlapping routing patterns
+- **Test**: Multiple subscribers with overlapping pattern rules
+- **Validation**: Messages correctly routed to all matching patterns
 
-### 4. EventDrivenArchitecture_MicroserviceEvents
-- **Purpose**: Simulate real-world event-driven architecture
-- **Test**: Multiple microservices publishing and consuming events
-- **Validation**: Events routed to correct handlers and audit logs
+### 4. EventDrivenArchitecture_MicroserviceEvents_Should_RouteToCorrectHandlers
+- **Purpose**: Simulate real-world microservice communication
+- **Test**: Route events between user, order, inventory, and audit services
+- **Validation**: Event types and systems correctly filtered
 
-### 5. DynamicTopicPatterns_ChangePatternsAtRuntime
-- **Purpose**: Test dynamic pattern management during runtime
-- **Test**: Add/remove patterns while consuming messages
-- **Validation**: Routing behavior updates correctly with pattern changes
+### 5. DynamicTopicPatterns_ChangePatternsAtRuntime_Should_UpdateRoutingBehavior
+- **Purpose**: Test runtime pattern management
+- **Test**: Add/remove binding patterns during execution
+- **Validation**: Routing behavior changes correctly
 
-### 6. TopicPersistence_DurableTopicExchange
+### 6. TopicPersistence_DurableTopicExchange_Should_HandlePersistentMessages
 - **Purpose**: Verify persistence and durability features
 - **Test**: Durable exchanges with persistent messages
 - **Validation**: Messages survive and are processed correctly
 
-### 7. TopicStatistics_PatternMatchingAndCounting
-- **Purpose**: Validate statistics and performance monitoring
-- **Test**: Track message counts, pattern matches, and timing
-- **Validation**: Statistics accuracy and performance metrics
+### 7. TopicStatistics_PatternMatchingAndCounting_Should_TrackCorrectly
+- **Purpose**: Validate pattern matching statistics
+- **Test**: Track message counts per pattern
+- **Validation**: Statistics accurately reflect message distribution
 
 ## Usage Examples
 
-### Basic Wildcard Subscription
+### Basic Topic Routing
 ```csharp
 // Create publisher
-var publisher = new TopicPublisher(channel, logger);
+var publisher = new TopicPublisher(channel, logger, "logs-exchange");
 await publisher.InitializeAsync();
 
-// Create subscribers with different patterns
-var errorLogSubscriber = new TopicSubscriber(channel, logger, "topic-exchange", "error-logs");
-await errorLogSubscriber.InitializeAsync(new[] { "logs.error.*" });
+// Create subscriber for error logs
+var errorSubscriber = new TopicSubscriber(channel, logger, "logs-exchange", "error-handler");
+await errorSubscriber.InitializeAsync(new[] { "*.error.*" });
 
-var allWebSubscriber = new TopicSubscriber(channel, logger, "topic-exchange", "all-web");
-await allWebSubscriber.InitializeAsync(new[] { "*.*.web" });
+// Publish messages
+await publisher.PublishMessageAsync("web.error.timeout", "Request timeout occurred");
+await publisher.PublishMessageAsync("db.error.connection", "Database connection failed");
+await publisher.PublishMessageAsync("web.info.startup", "Web server started"); // Won't match
 
-// Publish hierarchical messages
-await publisher.PublishMessageAsync("logs.error.database", "Database error occurred");
-await publisher.PublishMessageAsync("logs.info.web", "Web request processed");
-
-// Start consuming
-await errorLogSubscriber.StartConsumingAsync(autoAck: true);
-await allWebSubscriber.StartConsumingAsync(autoAck: true);
+// Consume matching messages
+var errorMessages = await errorSubscriber.ConsumeMessagesAsync(2);
 ```
 
-### Event-Driven Microservices
+### Microservice Event Routing
 ```csharp
-// Publishers for different services
-var userPublisher = new TopicPublisher(channel, logger, "events-exchange");
-var orderPublisher = new TopicPublisher(channel, logger, "events-exchange");
+// Create event publisher
+var eventPublisher = new TopicPublisher(channel, logger, "microservices-events");
+await eventPublisher.InitializeAsync();
 
-// Service-specific subscribers
-var userSubscriber = new TopicSubscriber(channel, logger, "events-exchange", "user-service");
-await userSubscriber.InitializeAsync(new[] { "user.#" });
+// Create service-specific subscribers
+var userServiceSubscriber = new TopicSubscriber(channel, logger, "microservices-events", "user-service");
+var orderServiceSubscriber = new TopicSubscriber(channel, logger, "microservices-events", "order-service");
+var auditSubscriber = new TopicSubscriber(channel, logger, "microservices-events", "audit-service");
 
-var orderSubscriber = new TopicSubscriber(channel, logger, "events-exchange", "order-service");
-await orderSubscriber.InitializeAsync(new[] { "order.#" });
+await userServiceSubscriber.InitializeAsync(new[] { "user.#" });
+await orderServiceSubscriber.InitializeAsync(new[] { "order.#" });
+await auditSubscriber.InitializeAsync(new[] { "#" }); // All events
 
-// Audit subscriber gets everything
-var auditSubscriber = new TopicSubscriber(channel, logger, "events-exchange", "audit-service");
-await auditSubscriber.InitializeAsync(new[] { "#" });
+// Publish microservice events
+await eventPublisher.PublishTestMicroserviceEventsAsync(messagesPerService: 5);
 
-// Publish events
-await userPublisher.PublishEventMessageAsync(new EventMessage 
-{
-    System = "user", 
-    Level = "service", 
-    Component = "registration",
-    EventType = "UserRegistered"
-});
+// Services automatically receive relevant events
 ```
 
 ### Dynamic Pattern Management
 ```csharp
-var subscriber = new TopicSubscriber(channel, logger, "logs-exchange", "dynamic-log-subscriber");
+// Start with basic pattern
+var dynamicSubscriber = new TopicSubscriber(channel, logger, "logs", "dynamic-handler");
+await dynamicSubscriber.InitializeAsync(new[] { "logs.info.*" });
 
-// Start with basic patterns
-await subscriber.InitializeAsync(new[] { "logs.info.*" });
-await subscriber.StartConsumingAsync(autoAck: true);
+// Later add error handling
+await dynamicSubscriber.AddBindingPatternsAsync(new[] { "logs.error.*", "logs.warning.*" });
 
-// Add error logs during runtime
-await subscriber.AddBindingPatternsAsync(new[] { "logs.error.*" });
+// Remove info pattern, keep error/warning
+await dynamicSubscriber.RemoveBindingPatternsAsync(new[] { "logs.info.*" });
 
-// Later, add all debug logs
-await subscriber.AddBindingPatternsAsync(new[] { "logs.debug.#" });
-
-// Remove info logs
-await subscriber.RemoveBindingPatternsAsync(new[] { "logs.info.*" });
-```
-
-### Complex Pattern Matching
-```csharp
-var complexSubscriber = new TopicSubscriber(channel, logger, "complex-exchange", "complex-patterns");
-
-// Multiple overlapping patterns
-var patterns = new[] 
-{
-    "system.app1.#",              // All app1 events
-    "*.*.*.auth.*",               // Auth events from any system
-    "analytics.#",                // All analytics
-    "*.*.*.*.slow",               // Slow operations
-    "monitoring.performance.#"    // Performance monitoring
-};
-
-await complexSubscriber.InitializeAsync(patterns);
-
-// Pattern matching handles overlaps automatically
-await complexSubscriber.StartConsumingAsync(autoAck: true);
+// Add catch-all for debugging
+await dynamicSubscriber.AddBindingPatternsAsync(new[] { "logs.debug.#" });
 ```
 
 ## Configuration Options
@@ -436,55 +405,40 @@ await complexSubscriber.StartConsumingAsync(autoAck: true);
 - **Exchange Name**: Custom topic exchange name
 - **Durability**: Whether the exchange survives server restarts
 - **Persistence**: Whether messages are saved to disk
-- **Routing Key Structure**: Hierarchical naming conventions
+- **Routing Key Strategy**: Custom hierarchical routing key patterns
 
 ### Subscriber Configuration
 - **Subscriber ID**: Unique identifier for the subscriber
 - **Binding Patterns**: Array of wildcard patterns to subscribe to
-- **Queue Options**: Named vs temporary, exclusive, durable queues
-- **Auto Acknowledgment**: Automatic vs manual message acknowledgment
-- **Pattern Matching**: Custom pattern validation logic
+- **Queue Type**: Named vs temporary, exclusive vs shared
+- **Acknowledgment Mode**: Auto vs manual message acknowledgment
+- **QoS Settings**: Prefetch count for fair message distribution
 
-## Wildcard Pattern Reference
+## Pattern Matching Rules
 
-### Single-Word Wildcard (*)
-- **Pattern**: `logs.*.database`
-- **Matches**: `logs.error.database`, `logs.info.database`
-- **Doesn't Match**: `logs.error.web.database`, `logs.database`
+### Single-word Wildcard (*)
+- Matches exactly one word in the routing key
+- `logs.*.web` matches: `logs.error.web`, `logs.info.web`
+- Does not match: `logs.web`, `logs.error.web.server`
 
-### Multi-Word Wildcard (#)
-- **Pattern**: `logs.#`
-- **Matches**: `logs`, `logs.error`, `logs.error.database`, `logs.info.web.frontend`
-- **Usage**: Must be at the end of pattern or standalone
+### Multi-word Wildcard (#)
+- Matches zero or more words in the routing key
+- `logs.#` matches: `logs`, `logs.error`, `logs.error.web.server`
+- `user.service.#` matches: `user.service.auth`, `user.service.auth.login.success`
 
 ### Combined Patterns
-- **Pattern**: `system.*.module.#`
-- **Matches**: `system.app1.module.auth`, `system.app2.module.data.query.slow`
-- **Doesn't Match**: `system.module.auth`, `system.app1.auth`
-
-### Complex Examples
-```
-Pattern                     | Matches
----------------------------|------------------------------------------
-logs.error.*               | logs.error.web, logs.error.database
-*.error.*                  | logs.error.web, system.error.auth
-user.service.*             | user.service.login, user.service.registration
-analytics.#                | analytics, analytics.realtime, analytics.batch.daily
-system.app1.#              | system.app1, system.app1.module.auth.login
-*.*.*.auth.*               | system.app1.module.auth.success
-monitoring.performance.#   | monitoring.performance, monitoring.performance.api.slow
-```
+- `*.error.#` matches: `web.error.timeout`, `db.error.connection.lost`
+- `logs.*.database` matches: `logs.error.database`, `logs.warning.database`
 
 ## Best Practices Demonstrated
 
-1. **Hierarchical Naming**: Consistent routing key structure (system.level.component)
-2. **Pattern Design**: Efficient wildcard patterns for selective routing
-3. **Resource Management**: Proper disposal of connections and channels
-4. **Error Handling**: Graceful handling of pattern matching and connection failures
-5. **Performance**: Efficient pattern matching algorithms and message processing
-6. **Monitoring**: Comprehensive statistics and performance tracking
-7. **Testing**: Thorough test coverage with complex routing scenarios
-8. **Flexibility**: Dynamic pattern management for runtime adaptability
+1. **Hierarchical Design**: Use consistent System.Level.Component routing keys
+2. **Pattern Strategy**: Design patterns for overlap and specificity balance
+3. **Resource Management**: Proper disposal of publishers and subscribers
+4. **Error Handling**: Graceful handling of pattern mismatches and failures
+5. **Performance**: Efficient pattern matching and message routing
+6. **Monitoring**: Statistics tracking for pattern effectiveness
+7. **Flexibility**: Dynamic pattern management for changing requirements
 
 ## Running the Tests
 
@@ -495,8 +449,8 @@ dotnet test --filter "TestFixture=TopicTests"
 # Run specific test
 dotnet test --filter "TestMethod=WildcardRouting_SingleAndMultiWordWildcards_Should_MatchCorrectPatterns"
 
-# Run with detailed logging
-dotnet test --filter "TestFixture=TopicTests" --logger "console;verbosity=detailed"
+# Run with detailed output
+dotnet test --filter "FullyQualifiedName~UseCase4_Topics" --verbosity normal
 ```
 
 ## Prerequisites
@@ -508,45 +462,19 @@ dotnet test --filter "TestFixture=TopicTests" --logger "console;verbosity=detail
 
 ## Performance Considerations
 
-- **Pattern Complexity**: Simple patterns perform better than complex overlapping patterns
-- **Message Volume**: Topic exchanges handle high throughput with efficient pattern matching
-- **Queue Management**: Use appropriate queue settings for subscriber patterns
-- **Connection Pooling**: Reuse connections across multiple publishers and subscribers
-- **Memory Usage**: Monitor memory usage with large numbers of binding patterns
-- **Pattern Optimization**: Design patterns to minimize overlaps and redundancy
+- **Pattern Complexity**: Simple patterns perform better than complex overlapping ones
+- **Exchange Management**: Topic exchanges are optimized for pattern matching
+- **Queue Strategy**: Use exclusive queues for single consumers, shared for load balancing
+- **Memory Usage**: Monitor pattern count and message retention
+- **Connection Sharing**: Reuse connections across multiple publishers/subscribers
+- **Binding Management**: Minimize binding changes during high message throughput
 
-## Real-World Use Cases
+## Real-World Applications
 
-### Logging Systems
-```
-logs.{level}.{component}
-logs.error.database
-logs.warning.web
-logs.info.auth
-```
+- **Logging Systems**: Route logs by severity, component, and system
+- **Event-Driven Architecture**: Microservice communication and event handling
+- **Monitoring**: Route metrics and alerts by system and criticality
+- **Notification Systems**: Selective notification delivery based on user preferences
+- **Data Processing**: Route data streams to appropriate processing pipelines
 
-### Event-Driven Architecture
-```
-{service}.{level}.{component}
-user.service.registration
-order.service.payment
-notification.service.email
-```
-
-### Monitoring and Analytics
-```
-{category}.{type}.{details}
-monitoring.performance.api.slow
-analytics.realtime.user.session
-alerts.critical.system.down
-```
-
-### IoT and Sensor Data
-```
-{location}.{sensor}.{metric}
-warehouse.temperature.reading
-factory.machine.status
-vehicle.gps.location
-```
-
-This implementation provides a comprehensive foundation for understanding RabbitMQ topic exchanges and serves as a reference for implementing complex routing scenarios in event-driven systems.
+This implementation provides a comprehensive foundation for understanding RabbitMQ topic exchanges and serves as a robust starting point for complex event-driven messaging architectures.
