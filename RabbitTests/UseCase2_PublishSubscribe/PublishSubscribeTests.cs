@@ -10,8 +10,6 @@ namespace RabbitTests.UseCase2_PublishSubscribe;
 [TestFixture]
 public class PublishSubscribeTests : TestBase
 {
-    private const string TestExchangeName = "test-fanout-exchange";
-
     [Test]
     public async Task BasicFanout_OnePublisherThreeSubscribers_Should_DeliverMessagesToAllSubscribers()
     {
@@ -65,20 +63,23 @@ public class PublishSubscribeTests : TestBase
                 $"Subscriber {i + 1} should have received {messageCount} messages, but received {receivedMessages.Count}");
         }
 
-        // Verify each subscriber received the same messages (fanout behavior)
+        // Verify each subscriber received messages with the expected pattern
+        for (int i = 0; i < subscriberCount; i++)
+        {
+            var messages = allReceivedMessages[i];
+            Assert.That(messages.All(msg => msg.Contains("Broadcast message")), Is.True,
+                $"All messages from subscriber {i + 1} should contain 'Broadcast message' pattern");
+        }
+
+        // Verify all subscribers received the same messages (fanout behavior)
         var firstSubscriberMessages = allReceivedMessages[0].OrderBy(m => m).ToList();
         for (int i = 1; i < subscriberCount; i++)
         {
             var otherSubscriberMessages = allReceivedMessages[i].OrderBy(m => m).ToList();
-            Assert.That(otherSubscriberMessages.Count, Is.EqualTo(firstSubscriberMessages.Count),
-                $"Subscriber {i + 1} received different number of messages than subscriber 1");
             
-            // Note: In fanout, all subscribers should receive the same set of messages
-            for (int j = 0; j < messageCount; j++)
-            {
-                Assert.That(otherSubscriberMessages[j].Contains($"Broadcast message {j + 1}"), Is.True,
-                    $"Subscriber {i + 1} missing message {j + 1}");
-            }
+            // All subscribers should receive identical messages in fanout pattern
+            Assert.That(otherSubscriberMessages, Is.EqualTo(firstSubscriberMessages),
+                $"Subscriber {i + 1} should have received the same messages as subscriber 1");
         }
 
         Logger.LogInformation("Basic fanout test completed successfully. All {SubscriberCount} subscribers received all {MessageCount} messages", 
@@ -101,9 +102,6 @@ public class PublishSubscribeTests : TestBase
         var publisher = new PublisherService(Channel, loggerFactory.CreateLogger<PublisherService>(), exchangeName);
         
         await publisher.InitializeAsync(durable: false);
-
-        const int messageCount = 15;
-        var allReceivedMessages = new List<(string subscriberId, List<string> messages)>();
 
         // Act
         Logger.LogInformation("Test: Dynamic Subscribers - Adding/removing subscribers during publishing");
@@ -178,7 +176,7 @@ public class PublishSubscribeTests : TestBase
         // Arrange
         var exchangeName = $"test-temp-queues-{Guid.NewGuid():N}";
         using var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
-        var publisher = new PublisherService(Channel, loggerFactory.CreateLogger<PublisherService>(), exchangeName);
+        var publisher = new PublisherService(Channel, loggerFactory.CreateLogger<PublisherService>(), exchangeName );
         
         await publisher.InitializeAsync(durable: false);
 
@@ -323,7 +321,7 @@ public class PublishSubscribeTests : TestBase
         // Arrange
         var exchangeName = $"test-durable-{Guid.NewGuid():N}";
         using var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
-        var publisher = new PublisherService(Channel, loggerFactory.CreateLogger<PublisherService>(), exchangeName);
+        var publisher = new PublisherService(Channel, loggerFactory.CreateLogger<PublisherService>(), exchangeName );
         
         const int messageCount = 6;
         var subscriber1 = new SubscriberService(Channel, loggerFactory.CreateLogger<SubscriberService>(), 
@@ -336,8 +334,8 @@ public class PublishSubscribeTests : TestBase
 
         // Initialize with durable exchange
         await publisher.InitializeAsync(durable: true);
-        await subscriber1.InitializeAsync(useTemporaryQueue: false, exclusive: false);
-        await subscriber2.InitializeAsync(useTemporaryQueue: false, exclusive: false);
+        await subscriber1.InitializeAsync(useTemporaryQueue: false, exclusive: false, durable: true);
+        await subscriber2.InitializeAsync(useTemporaryQueue: false, exclusive: false, durable: true);
 
         // Start consuming and publish persistent messages
         var task1 = subscriber1.ConsumeMessagesAsync(messageCount, autoAck: false, TimeSpan.FromSeconds(30));
@@ -377,19 +375,24 @@ public class PublishSubscribeTests : TestBase
         // Arrange
         var exchangeName = $"test-stats-{Guid.NewGuid():N}";
         using var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
-        var publisher = new PublisherService(Channel, loggerFactory.CreateLogger<PublisherService>(), exchangeName);
+        var publisher = new PublisherService(Channel, loggerFactory.CreateLogger<PublisherService>(), exchangeName );
         
         const int messageCount = 10;
+        
+        // Initialize publisher
+        await publisher.InitializeAsync(durable: false);
+
+        // Record start time before creating subscriber to ensure correct timing comparison
+        var startTime = DateTime.UtcNow;
+        
         var subscriber = new SubscriberService(Channel, loggerFactory.CreateLogger<SubscriberService>(), 
             exchangeName, "stats-subscriber");
 
-        await publisher.InitializeAsync(durable: false);
-        await subscriber.InitializeAsync();
-
-        var startTime = DateTime.UtcNow;
-
         // Act
         Logger.LogInformation("Test: Subscriber Statistics - Tracking message counts and timing");
+
+        // Initialize subscriber after recording start time to avoid timing issues
+        await subscriber.InitializeAsync();
 
         var consumeTask = subscriber.ConsumeMessagesAsync(messageCount, autoAck: true, TimeSpan.FromSeconds(30));
         await Task.Delay(200);

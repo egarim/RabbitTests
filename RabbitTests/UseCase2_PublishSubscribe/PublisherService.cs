@@ -31,6 +31,7 @@ public class PublisherService : IDisposable
     {
         try
         {
+            // Simply declare the exchange - if it exists with different properties, RabbitMQ will handle it
             await _channel.ExchangeDeclareAsync(_exchangeName, ExchangeType.Fanout, durable, false);
             _logger.LogInformation("Fanout exchange '{ExchangeName}' declared (durable: {Durable})", _exchangeName, durable);
         }

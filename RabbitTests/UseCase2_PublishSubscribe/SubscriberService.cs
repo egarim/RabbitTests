@@ -46,12 +46,13 @@ public class SubscriberService : IDisposable
     /// </summary>
     /// <param name="useTemporaryQueue">Whether to use a temporary auto-delete queue</param>
     /// <param name="exclusive">Whether the queue should be exclusive to this connection</param>
-    public async Task InitializeAsync(bool useTemporaryQueue = true, bool exclusive = true)
+    /// <param name="durable">Whether the exchange should be durable</param>
+    public async Task InitializeAsync(bool useTemporaryQueue = true, bool exclusive = true, bool durable = false)
     {
         try
         {
             // Declare the exchange (idempotent)
-            await _channel.ExchangeDeclareAsync(_exchangeName, ExchangeType.Fanout, false, false);
+            await _channel.ExchangeDeclareAsync(_exchangeName, ExchangeType.Fanout, durable, false);
 
             // Declare queue - use temporary exclusive queue for pub/sub pattern
             if (useTemporaryQueue)
@@ -62,14 +63,14 @@ public class SubscriberService : IDisposable
             else
             {
                 _queueName = $"subscriber-queue-{_subscriberId}";
-                await _channel.QueueDeclareAsync(_queueName, false, exclusive, true);
+                await _channel.QueueDeclareAsync(_queueName, durable, exclusive, !durable);
             }
 
             // Bind queue to exchange (no routing key needed for fanout)
             await _channel.QueueBindAsync(_queueName, _exchangeName, "");
 
-            _logger.LogInformation("Subscriber '{SubscriberId}' initialized with queue '{QueueName}' bound to exchange '{ExchangeName}'",
-                _subscriberId, _queueName, _exchangeName);
+            _logger.LogInformation("Subscriber '{SubscriberId}' initialized with queue '{QueueName}' bound to exchange '{ExchangeName}' (durable: {Durable})",
+                _subscriberId, _queueName, _exchangeName, durable);
         }
         catch (Exception ex)
         {

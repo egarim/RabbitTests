@@ -42,6 +42,14 @@ public abstract class TestBase : IDisposable
     [SetUp]
     public virtual async Task SetUp()
     {
+        // Recreate channel if it's closed (happens when there are RabbitMQ errors)
+        if (Channel == null || !Channel.IsOpen)
+        {
+            Channel?.Dispose();
+            Channel = Connection.CreateChannel();
+            Logger.LogInformation("Recreated channel for test setup");
+        }
+        
         // Clean up any existing test queues and exchanges before each test
         await CleanupTestResources();
     }
@@ -51,6 +59,14 @@ public abstract class TestBase : IDisposable
     {
         // Clean up test resources after each test
         await CleanupTestResources();
+        
+        // Also recreate channel if it got closed during the test
+        if (Channel != null && !Channel.IsOpen)
+        {
+            Channel.Dispose();
+            Channel = Connection.CreateChannel();
+            Logger.LogInformation("Recreated channel for next test");
+        }
     }
 
     [OneTimeTearDown]
